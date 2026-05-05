@@ -83,10 +83,28 @@ const BODY_SCAN_STEPS = [
   'You are here. Fully here.'
 ];
 
+// ─── Storage helpers (guarded against invalidated extension context) ──────────
+
+function storageSet(data) {
+  try {
+    chrome.storage.local.set(data);
+  } catch (e) {
+    // Extension context invalidated — tab needs a refresh to reconnect
+  }
+}
+
+function storageGet(keys, callback) {
+  try {
+    chrome.storage.local.get(keys, callback);
+  } catch (e) {
+    callback({});
+  }
+}
+
 // ─── Session State ────────────────────────────────────────────────────────────
 
-let session = null;       // loaded from storage
-let activeStart = null;   // when this focus period started
+let session = null;
+let activeStart = null;
 let overlayActive = false;
 let checkTimer = null;
 
@@ -98,12 +116,12 @@ function getAccumulatedTime() {
 
 function saveSession() {
   if (!session) return;
-  chrome.storage.local.set({ [STORAGE_KEY]: session });
+  storageSet({ [STORAGE_KEY]: session });
 }
 
 async function loadSession() {
   return new Promise(resolve => {
-    chrome.storage.local.get([STORAGE_KEY], data => {
+    storageGet([STORAGE_KEY], data => {
       const stored = data[STORAGE_KEY];
       const today = new Date().toDateString();
       if (stored && stored.date === today) {
@@ -129,19 +147,17 @@ function startTracking() {
 
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
-      // Pause: accumulate time
       if (activeStart) {
         session.accumulatedMs = (session.accumulatedMs || 0) + (Date.now() - activeStart);
         activeStart = null;
         saveSession();
       }
     } else {
-      // Resume
       activeStart = Date.now();
     }
   });
 
-  checkTimer = setInterval(checkLevels, 10000); // check every 10s
+  checkTimer = setInterval(checkLevels, 10000);
   checkLevels();
 }
 
@@ -163,7 +179,6 @@ function triggerLevel(lvlConfig) {
   const elapsed = getAccumulatedTime();
   const minutes = Math.round(elapsed / 60000);
 
-  // Log the interrupt
   const interruptRecord = {
     level: lvlConfig.level,
     triggeredAt: Date.now(),
@@ -235,7 +250,6 @@ function buildOverlay(lvlConfig, minutes, record) {
     </div>
   `;
 
-  // Build round dots
   const roundsEl = el.querySelector('#bb-rounds');
   for (let i = 0; i < lvlConfig.rounds; i++) {
     const dot = document.createElement('div');
@@ -244,20 +258,15 @@ function buildOverlay(lvlConfig, minutes, record) {
     roundsEl.appendChild(dot);
   }
 
-  // Wire up skip button
   el.querySelector('.bb-exit').addEventListener('click', () => {
     dismissOverlay(el, record, false);
   });
 
-  // Wire up continue button
   const continueBtn = el.querySelector('#bb-continue-btn');
   continueBtn.addEventListener('click', () => {
-    if (!continueBtn.disabled) {
-      dismissOverlay(el, record, true);
-    }
+    if (!continueBtn.disabled) dismissOverlay(el, record, true);
   });
 
-  // Start the breathing sequence after a short intro delay
   setTimeout(() => runBreathing(el, lvlConfig, record), 1200);
 
   return el;
@@ -268,14 +277,11 @@ function buildOverlay(lvlConfig, minutes, record) {
 function runBreathing(el, lvlConfig, record) {
   const pattern = PATTERNS[lvlConfig.pattern];
   const totalRounds = lvlConfig.rounds;
-  const totalPhases = pattern.length * totalRounds;
 
   let currentRound = 0;
   let currentPhaseIdx = 0;
   let phaseStart = null;
   let animFrame = null;
-  let bodyScanIdx = 0;
-  let bodyScanTimer = null;
 
   const phaseText = el.querySelector('#bb-phase-text');
   const countText = el.querySelector('#bb-count-text');
@@ -288,7 +294,7 @@ function runBreathing(el, lvlConfig, record) {
 
   const COLORS = { inhale: '#60a5fa', hold: '#a78bfa', exhale: '#34d399' };
   const MIN_R = 42, MAX_R = 72;
-  const RING_CIRCUMFERENCE = 2 * Math.PI * 70; // r=70
+  const RING_CIRCUMFERENCE = 2 * Math.PI * 70;
 
   let totalDone = 0;
   const totalMs = pattern.reduce((sum, p) => sum + p.seconds * 1000, 0) * totalRounds;
@@ -304,16 +310,12 @@ function runBreathing(el, lvlConfig, record) {
     phaseText.textContent = phase.label;
     phaseText.style.fill = color;
     ring.style.stroke = color;
-
-    // Reset ring
     ring.style.strokeDashoffset = RING_CIRCUMFERENCE;
-
     phaseStart = Date.now();
 
-    // Update dot for current round
     dots.forEach((d, i) => {
-      if (i < currentRound) d.classList.add('done'), d.classList.remove('active');
-      else if (i === currentRound) d.classList.add('active'), d.classList.remove('done');
+      if (i < currentRound) { d.classList.add('done'); d.classList.remove('active'); }
+      else if (i === currentRound) { d.classList.add('active'); d.classList.remove('done'); }
       else d.classList.remove('active', 'done');
     });
 
@@ -325,11 +327,9 @@ function runBreathing(el, lvlConfig, record) {
     const elapsed = Date.now() - phaseStart;
     const t = Math.min(elapsed / (phase.seconds * 1000), 1);
 
-    // Countdown
     const remaining = Math.ceil((phase.seconds * 1000 - elapsed) / 1000);
     countText.textContent = Math.max(remaining, 1);
 
-    // Circle radius animation
     let r;
     if (phase.phase === 'inhale') {
       r = MIN_R + (MAX_R - MIN_R) * easeInOut(t);
@@ -341,12 +341,8 @@ function runBreathing(el, lvlConfig, record) {
 
     fill.setAttribute('r', r);
     glow.setAttribute('r', r + 6);
+    ring.style.strokeDashoffset = RING_CIRCUMFERENCE * (1 - t);
 
-    // Ring progress
-    const dashOffset = RING_CIRCUMFERENCE * (1 - t);
-    ring.style.strokeDashoffset = dashOffset;
-
-    // Overall progress
     const overallDone = totalDone + elapsed;
     progress.style.width = `${Math.min((overallDone / totalMs) * 100, 100)}%`;
 
@@ -366,12 +362,7 @@ function runBreathing(el, lvlConfig, record) {
       dots[currentRound - 1]?.classList.add('done');
       dots[currentRound - 1]?.classList.remove('active');
     }
-
-    if (currentRound >= totalRounds) {
-      onBreathingComplete();
-      return;
-    }
-
+    if (currentRound >= totalRounds) { onBreathingComplete(); return; }
     startPhase(currentPhaseIdx);
   }
 
@@ -383,18 +374,8 @@ function runBreathing(el, lvlConfig, record) {
     progress.style.width = '100%';
     instruction.textContent = 'Breathing complete.';
 
-    // Body scan (if applicable)
-    if (lvlConfig.bodyScan) {
-      runBodyScan(el, lvlConfig, record);
-      return;
-    }
-
-    // Prompt (if applicable)
-    if (lvlConfig.prompt) {
-      showPrompt(el, record);
-      return;
-    }
-
+    if (lvlConfig.bodyScan) { runBodyScan(el, lvlConfig, record); return; }
+    if (lvlConfig.prompt)   { showPrompt(el, record); return; }
     enableContinue(el, record);
   }
 
@@ -414,11 +395,7 @@ function runBodyScan(el, lvlConfig, record) {
   let idx = 0;
   function showNext() {
     if (idx >= BODY_SCAN_STEPS.length) {
-      if (lvlConfig.prompt) {
-        showPrompt(el, record);
-      } else {
-        enableContinue(el, record);
-      }
+      if (lvlConfig.prompt) { showPrompt(el, record); } else { enableContinue(el, record); }
       return;
     }
     text.style.opacity = '0';
@@ -451,7 +428,7 @@ function showPrompt(el, record) {
       btn.textContent = 'Return to feed';
     } else {
       btn.disabled = true;
-      btn.textContent = `Type a few more words…`;
+      btn.textContent = 'Type a few more words…';
     }
   });
 }
@@ -474,30 +451,23 @@ function dismissOverlay(el, record, completed) {
   record.completed = completed;
   if (completed) {
     record.completedAt = Date.now();
-    record.resumed = true; // they clicked return to feed
+    record.resumed = true;
   }
   saveSession();
   appendLog(record);
 
   overlayActive = false;
-
-  // Resume the visibility-based timer
   if (!document.hidden) activeStart = Date.now();
 }
 
 // ─── Logging ─────────────────────────────────────────────────────────────────
 
 function appendLog(record) {
-  chrome.storage.local.get([LOG_KEY], data => {
+  storageGet([LOG_KEY], data => {
     const log = data[LOG_KEY] || [];
-    log.push({
-      site: SITE,
-      date: new Date().toDateString(),
-      ...record
-    });
-    // Keep last 500 entries
+    log.push({ site: SITE, date: new Date().toDateString(), ...record });
     if (log.length > 500) log.splice(0, log.length - 500);
-    chrome.storage.local.set({ [LOG_KEY]: log });
+    storageSet({ [LOG_KEY]: log });
   });
 }
 
