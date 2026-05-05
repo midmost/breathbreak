@@ -85,17 +85,22 @@ const BODY_SCAN_STEPS = [
 
 // ─── Storage helpers (guarded against invalidated extension context) ──────────
 
+function isContextValid() {
+  try { return !!chrome.runtime?.id; } catch (e) { return false; }
+}
+
 function storageSet(data) {
-  try {
-    chrome.storage.local.set(data);
-  } catch (e) {
-    // Extension context invalidated — tab needs a refresh to reconnect
-  }
+  if (!isContextValid()) return;
+  try { chrome.storage.local.set(data); } catch (e) {}
 }
 
 function storageGet(keys, callback) {
+  if (!isContextValid()) { callback({}); return; }
   try {
-    chrome.storage.local.get(keys, callback);
+    chrome.storage.local.get(keys, data => {
+      if (chrome.runtime.lastError) { callback({}); return; }
+      callback(data);
+    });
   } catch (e) {
     callback({});
   }
@@ -162,6 +167,7 @@ function startTracking() {
 }
 
 function checkLevels() {
+  if (!isContextValid()) { clearInterval(checkTimer); return; }
   if (overlayActive) return;
   const elapsed = getAccumulatedTime();
   for (const lvl of LEVELS) {
