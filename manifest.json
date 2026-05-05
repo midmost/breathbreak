@@ -16,7 +16,8 @@
         "*://*.linkedin.com/*",
         "*://*.tiktok.com/*",
         "*://*.facebook.com/*",
-        "*://*.reddit.com/*"
+        "*://*.reddit.com/*",
+        "*://*.youtube.com/*"
       ],
       "js": ["content.js"],
       "css": ["overlay.css"],

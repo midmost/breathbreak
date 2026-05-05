@@ -4,7 +4,7 @@ const LOG_KEY = 'bb_log';
 const LEVEL_NAMES = ['Quick Reset', 'Nervous System Reset', 'Body Scan', 'Deep Reset', 'Full Presence'];
 const LEVEL_THRESHOLDS = [5, 15, 25, 40, 60];
 
-const SITES = ['twitter.com', 'x.com', 'instagram.com', 'linkedin.com', 'tiktok.com', 'facebook.com', 'reddit.com'];
+const SITES = ['twitter.com', 'x.com', 'instagram.com', 'linkedin.com', 'tiktok.com', 'facebook.com', 'reddit.com', 'youtube.com'];
 
 document.getElementById('today-label').textContent = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 

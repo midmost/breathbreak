@@ -9,7 +9,8 @@ const SITE = (() => {
   const map = {
     'twitter.com': 'Twitter/X', 'x.com': 'Twitter/X',
     'instagram.com': 'Instagram', 'linkedin.com': 'LinkedIn',
-    'tiktok.com': 'TikTok', 'facebook.com': 'Facebook', 'reddit.com': 'Reddit'
+    'tiktok.com': 'TikTok', 'facebook.com': 'Facebook', 'reddit.com': 'Reddit',
+    'youtube.com': 'YouTube'
   };
   return map[h] || h;
 })();
