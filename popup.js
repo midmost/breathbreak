@@ -2,7 +2,7 @@
 
 const LOG_KEY = 'bb_log';
 const LEVEL_NAMES = ['Quick Reset', 'Nervous System Reset', 'Body Scan', 'Deep Reset', 'Full Presence'];
-const LEVEL_THRESHOLDS = [1, 2, 3, 4, 5];
+const LEVEL_THRESHOLDS = [8, 17, 30, 45, 60];
 const LEVEL_PROMPTS = [
   null,
   'What do I actually want right now?',

@@ -20,34 +20,34 @@ const LOG_KEY = 'bb_log';
 
 const LEVELS = [
   {
-    level: 1, threshold: 1 * 60 * 1000,
+    level: 1, threshold: 8 * 60 * 1000,
     name: 'Quick Reset',
     description: 'Box breath — 30 seconds',
     pattern: 'box', rounds: 2
   },
   {
-    level: 2, threshold: 2 * 60 * 1000,
+    level: 2, threshold: 17 * 60 * 1000,
     name: 'Nervous System Reset',
     description: '4-7-8 breath + reflection',
     pattern: '478', rounds: 2,
     prompt: 'What do I actually want right now?'
   },
   {
-    level: 3, threshold: 3 * 60 * 1000,
+    level: 3, threshold: 30 * 60 * 1000,
     name: 'Body Scan',
     description: '4-7-8 breath + body awareness',
     pattern: '478', rounds: 2,
     bodyScan: true
   },
   {
-    level: 4, threshold: 4 * 60 * 1000,
+    level: 4, threshold: 45 * 60 * 1000,
     name: 'Deep Reset',
     description: '4-7-8 × 3 rounds + reflection',
     pattern: '478', rounds: 3,
     prompt: 'What would feel genuinely good right now?'
   },
   {
-    level: 5, threshold: 5 * 60 * 1000,
+    level: 5, threshold: 60 * 60 * 1000,
     name: 'Full Presence',
     description: '4-7-8 × 5 rounds + body scan + reflection',
     pattern: '478', rounds: 5,
@@ -232,10 +232,10 @@ function checkLevels() {
     }
   }
 
-  // Level 5: first at 5 min, then every 2 min indefinitely
+  // Level 5: first at 60 min, then every 20 min indefinitely
   const lvl5 = LEVELS[4];
   const count = session.level5Count || 0;
-  const nextThreshold = lvl5.threshold + count * 2 * 60 * 1000;
+  const nextThreshold = lvl5.threshold + count * 20 * 60 * 1000;
   if (elapsed >= nextThreshold) {
     session.level5Count = count + 1;
     triggerLevel(lvl5);
@@ -476,7 +476,7 @@ function runBodyScan(el, lvlConfig, record) {
       text.style.transition = 'opacity 0.6s ease';
       text.style.opacity = '1';
       idx++;
-      setTimeout(showNext, 3200);
+      setTimeout(showNext, 6400);
     }, 400);
   }
   showNext();
