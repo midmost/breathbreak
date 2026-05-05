@@ -19,34 +19,34 @@ const LOG_KEY = 'bb_log';
 
 const LEVELS = [
   {
-    level: 1, threshold: 15 * 1000, // TEST: 15s (normally 5 min)
+    level: 1, threshold: 5 * 60 * 1000,
     name: 'Quick Reset',
     description: 'Box breath — 30 seconds',
     pattern: 'box', rounds: 2
   },
   {
-    level: 2, threshold: 30 * 1000, // TEST: 30s (normally 15 min)
+    level: 2, threshold: 15 * 60 * 1000,
     name: 'Nervous System Reset',
     description: '4-7-8 breath + reflection',
     pattern: '478', rounds: 2,
     prompt: 'What do I actually want right now?'
   },
   {
-    level: 3, threshold: 45 * 1000, // TEST: 45s (normally 25 min)
+    level: 3, threshold: 25 * 60 * 1000,
     name: 'Body Scan',
     description: '4-7-8 breath + body awareness',
     pattern: '478', rounds: 2,
     bodyScan: true
   },
   {
-    level: 4, threshold: 60 * 1000, // TEST: 60s (normally 40 min)
+    level: 4, threshold: 40 * 60 * 1000,
     name: 'Deep Reset',
     description: '4-7-8 × 3 rounds + reflection',
     pattern: '478', rounds: 3,
     prompt: 'What would feel genuinely good right now?'
   },
   {
-    level: 5, threshold: 90 * 1000, // TEST: 90s (normally 60 min)
+    level: 5, threshold: 60 * 60 * 1000,
     name: 'Full Presence',
     description: '4-7-8 × 5 rounds + body scan + reflection',
     pattern: '478', rounds: 5,
