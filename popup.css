@@ -206,6 +206,41 @@ body {
   display: block;
 }
 
+/* Reflections */
+.reflection-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.reflection-card {
+  background: rgba(255,255,255,0.04);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.reflection-prompt {
+  font-size: 11px;
+  color: rgba(255,255,255,0.35);
+  font-style: italic;
+  line-height: 1.4;
+}
+
+.reflection-text {
+  font-size: 13px;
+  color: rgba(255,255,255,0.8);
+  line-height: 1.5;
+}
+
+.reflection-meta {
+  font-size: 11px;
+  color: rgba(255,255,255,0.25);
+  margin-top: 2px;
+}
+
 /* Footer */
 .footer {
   padding: 12px 20px;

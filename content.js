@@ -520,6 +520,12 @@ function dismissOverlay(el, record, completed) {
   el.style.opacity = '0';
   setTimeout(() => el.remove(), 320);
 
+  // Capture journal reflection if the prompt was shown and filled in
+  const promptInput = el.querySelector('#bb-prompt-input');
+  if (promptInput && promptInput.value.trim()) {
+    record.promptText = promptInput.value.trim();
+  }
+
   record.completed = completed;
   if (completed) {
     record.completedAt = Date.now();
@@ -547,3 +553,10 @@ function appendLog(record) {
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
 loadSession().then(startTracking);
+
+// YouTube SPA navigation (Shorts, Watch, Home, etc.) fires yt-navigate-finish
+// when the URL changes without a full page reload. Resume timing on each navigation.
+window.addEventListener('yt-navigate-finish', () => {
+  if (!session) return;
+  if (!document.hidden && !activeStart) activeStart = Date.now();
+});

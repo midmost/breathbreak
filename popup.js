@@ -2,7 +2,14 @@
 
 const LOG_KEY = 'bb_log';
 const LEVEL_NAMES = ['Quick Reset', 'Nervous System Reset', 'Body Scan', 'Deep Reset', 'Full Presence'];
-const LEVEL_THRESHOLDS = [5, 15, 25, 40, 60];
+const LEVEL_THRESHOLDS = [1, 2, 3, 4, 5];
+const LEVEL_PROMPTS = [
+  null,
+  'What do I actually want right now?',
+  null,
+  'What would feel genuinely good right now?',
+  'What matters most to me right now?'
+];
 
 const SITES = ['twitter.com', 'x.com', 'instagram.com', 'linkedin.com', 'tiktok.com', 'facebook.com', 'reddit.com', 'youtube.com'];
 
@@ -43,6 +50,9 @@ function render(log, sessions) {
   // Total tracked scroll time today
   const totalScrollMin = sessions.reduce((sum, s) => sum + Math.round((s.accumulatedMs || 0) / 60000), 0);
 
+  // Journal reflections (entries where the user typed a response)
+  const reflections = log.filter(e => e.promptText && e.promptText.trim());
+
   main.innerHTML = `
     <div class="stats-grid">
       <div class="stat-cell">
@@ -67,6 +77,13 @@ function render(log, sessions) {
     <div class="divider"></div>
 
     <div class="section" id="insight-section"></div>
+
+    ${reflections.length > 0 ? `
+    <div class="divider"></div>
+    <div class="section">
+      <div class="section-title">Reflections</div>
+      <div class="reflection-list" id="reflection-list"></div>
+    </div>` : ''}
 
     ${sessions.length > 0 ? `
     <div class="divider"></div>
@@ -107,6 +124,26 @@ function render(log, sessions) {
     insightSection.innerHTML = `
       <div class="section-title">Insight</div>
       <div class="insight">${insight}</div>`;
+  }
+
+  // Reflections
+  const reflectionList = document.getElementById('reflection-list');
+  if (reflectionList) {
+    [...reflections].reverse().forEach(e => {
+      const levelIdx = (e.level || 1) - 1;
+      const promptQ = LEVEL_PROMPTS[levelIdx];
+      const time = e.triggeredAt
+        ? new Date(e.triggeredAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+        : '';
+      const card = document.createElement('div');
+      card.className = 'reflection-card';
+      card.innerHTML = `
+        ${promptQ ? `<div class="reflection-prompt">"${promptQ}"</div>` : ''}
+        <div class="reflection-text">${e.promptText}</div>
+        <div class="reflection-meta">${e.site || ''} · L${e.level} · ${time}</div>
+      `;
+      reflectionList.appendChild(card);
+    });
   }
 
   // Sessions
