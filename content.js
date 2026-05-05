@@ -20,34 +20,34 @@ const LOG_KEY = 'bb_log';
 
 const LEVELS = [
   {
-    level: 1, threshold: 5 * 60 * 1000,
+    level: 1, threshold: 1 * 60 * 1000,
     name: 'Quick Reset',
     description: 'Box breath — 30 seconds',
     pattern: 'box', rounds: 2
   },
   {
-    level: 2, threshold: 15 * 60 * 1000,
+    level: 2, threshold: 2 * 60 * 1000,
     name: 'Nervous System Reset',
     description: '4-7-8 breath + reflection',
     pattern: '478', rounds: 2,
     prompt: 'What do I actually want right now?'
   },
   {
-    level: 3, threshold: 25 * 60 * 1000,
+    level: 3, threshold: 3 * 60 * 1000,
     name: 'Body Scan',
     description: '4-7-8 breath + body awareness',
     pattern: '478', rounds: 2,
     bodyScan: true
   },
   {
-    level: 4, threshold: 40 * 60 * 1000,
+    level: 4, threshold: 4 * 60 * 1000,
     name: 'Deep Reset',
     description: '4-7-8 × 3 rounds + reflection',
     pattern: '478', rounds: 3,
     prompt: 'What would feel genuinely good right now?'
   },
   {
-    level: 5, threshold: 60 * 60 * 1000,
+    level: 5, threshold: 5 * 60 * 1000,
     name: 'Full Presence',
     description: '4-7-8 × 5 rounds + body scan + reflection',
     pattern: '478', rounds: 5,
@@ -113,6 +113,57 @@ let session = null;
 let activeStart = null;
 let overlayActive = false;
 let checkTimer = null;
+let pausedMediaElements = [];
+let mediaGuardInterval = null;
+
+function getAllMediaElements(root = document) {
+  const results = [];
+  root.querySelectorAll('video, audio').forEach(el => results.push(el));
+  root.querySelectorAll('*').forEach(el => {
+    if (el.shadowRoot) getAllMediaElements(el.shadowRoot).forEach(e => results.push(e));
+  });
+  return results;
+}
+
+function suppressAllMedia() {
+  getAllMediaElements().forEach(el => {
+    if (!el.paused) el.pause();
+    if (!el.muted) el.muted = true;
+  });
+}
+
+function onMediaPlayAttempt(e) {
+  if (!overlayActive) return;
+  const el = e.target;
+  if (el.tagName === 'VIDEO' || el.tagName === 'AUDIO') {
+    el.pause();
+    el.muted = true;
+  }
+}
+
+function pausePageMedia() {
+  pausedMediaElements = [];
+  getAllMediaElements().forEach(el => {
+    pausedMediaElements.push({ el, wasPaused: el.paused, wasMuted: el.muted });
+    el.pause();
+    el.muted = true;
+  });
+  // Capture-phase listener catches play attempts the instant they fire
+  document.addEventListener('play', onMediaPlayAttempt, true);
+  // 100ms guard catches lazy-loaded elements and platform auto-resume
+  mediaGuardInterval = setInterval(suppressAllMedia, 100);
+}
+
+function resumePageMedia() {
+  document.removeEventListener('play', onMediaPlayAttempt, true);
+  clearInterval(mediaGuardInterval);
+  mediaGuardInterval = null;
+  pausedMediaElements.forEach(({ el, wasPaused, wasMuted }) => {
+    el.muted = wasMuted;
+    if (!wasPaused) el.play().catch(() => {});
+  });
+  pausedMediaElements = [];
+}
 
 function getAccumulatedTime() {
   if (!session) return 0;
@@ -160,6 +211,7 @@ function startTracking() {
       }
     } else {
       activeStart = Date.now();
+      if (overlayActive) suppressAllMedia();
     }
   });
 
@@ -171,11 +223,22 @@ function checkLevels() {
   if (!isContextValid()) { clearInterval(checkTimer); return; }
   if (overlayActive) return;
   const elapsed = getAccumulatedTime();
-  for (const lvl of LEVELS) {
+
+  // Levels 1–4: trigger once each
+  for (const lvl of LEVELS.slice(0, 4)) {
     if (elapsed >= lvl.threshold && !session.triggeredLevels.includes(lvl.level)) {
       triggerLevel(lvl);
       return;
     }
+  }
+
+  // Level 5: first at 5 min, then every 2 min indefinitely
+  const lvl5 = LEVELS[4];
+  const count = session.level5Count || 0;
+  const nextThreshold = lvl5.threshold + count * 2 * 60 * 1000;
+  if (elapsed >= nextThreshold) {
+    session.level5Count = count + 1;
+    triggerLevel(lvl5);
   }
 }
 
@@ -197,8 +260,10 @@ function triggerLevel(lvlConfig) {
   session.interrupts.push(interruptRecord);
   saveSession();
 
+  pausePageMedia();
   const overlay = buildOverlay(lvlConfig, minutes, interruptRecord);
-  document.body.appendChild(overlay);
+  // Append to <html> so TikTok/Instagram body transforms don't trap the stacking context
+  document.documentElement.appendChild(overlay);
 }
 
 function buildOverlay(lvlConfig, minutes, record) {
@@ -463,6 +528,7 @@ function dismissOverlay(el, record, completed) {
   saveSession();
   appendLog(record);
 
+  resumePageMedia();
   overlayActive = false;
   if (!document.hidden) activeStart = Date.now();
 }
