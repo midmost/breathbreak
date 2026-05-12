@@ -1,7 +1,7 @@
 'use strict';
 
 const LOG_KEY = 'bb_log';
-const LEVEL_NAMES = ['Quick Reset', 'Nervous System Reset', 'Body Scan', 'Deep Reset', 'Full Presence'];
+const LEVEL_NAMES = ['Quick Reset', 'Settle', 'Body Scan', 'Deep Reset', 'Full Presence'];
 const LEVEL_THRESHOLDS = [8, 17, 30, 45, 60];
 const LEVEL_PROMPTS = [
   null,
@@ -44,6 +44,8 @@ function renderCurrentTab() {
     const todayLog = fullLog.filter(e => e.date === todayStr);
     const todaySessions = fullSessions.filter(s => s.date === todayStr);
     render(todayLog, todaySessions);
+  } else if (currentTab === 'reflections') {
+    renderReflections(fullLog);
   } else {
     renderWeekly(fullLog, weekOffset);
   }
@@ -320,6 +322,117 @@ function render(log, sessions) {
       sessionList.appendChild(row);
     });
   }
+}
+
+function renderReflections(log) {
+  const main = document.getElementById('main-content');
+  const allReflections = log.filter(e => e.promptText && e.promptText.trim());
+
+  if (allReflections.length === 0) {
+    main.innerHTML = `
+      <div class="empty">
+        <span class="empty-icon">💭</span>
+        No reflections yet.<br>
+        Complete a Level 2, 4, or 5 session<br>to add your first entry.
+      </div>`;
+    return;
+  }
+
+  // ── Word frequency ──────────────────────────────────────────────────────────
+  const STOP = new Set([
+    'i','the','a','an','is','do','what','right','now','me','my','to','and','it',
+    'that','for','of','in','just','so','this','are','not','but','be','at','or',
+    'have','was','with','on','as','by','if','up','we','he','she','they','their',
+    'them','its','our','you','your','im','dont','cant','its','ive','id'
+  ]);
+  const WARM = new Set([
+    'feel','want','tired','bored','anxious','happy','sad','stressed','need','love',
+    'scared','frustrated','excited','overwhelmed','calm','peaceful','angry','lonely',
+    'grateful','worried','content','restless','curious','hopeful','empty','lost'
+  ]);
+  const COOL = new Set([
+    'work','done','finish','task','project','meeting','email','deadline','job',
+    'code','write','read','study','plan','goal','focus','start','complete','build',
+    'create','send','check','review','update','call','fix','launch','ship'
+  ]);
+
+  const counts = {};
+  allReflections.forEach(e => {
+    e.promptText.toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter(Boolean)
+      .forEach(w => {
+        if (!STOP.has(w) && w.length > 2) counts[w] = (counts[w] || 0) + 1;
+      });
+  });
+
+  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  const top20 = sorted.slice(0, 20);
+  const top5  = sorted.slice(0, 5);
+  const maxFreq = top20.length ? top20[0][1] : 1;
+  const minFreq = top20.length ? top20[top20.length - 1][1] : 1;
+
+  // ── Tag cloud ──────────────────────────────────────────────────────────────
+  let styleHTML = '<style>';
+  let cloudHTML = '';
+
+  top20.forEach(([word, count], idx) => {
+    const ratio = maxFreq === minFreq ? 0.5 : (count - minFreq) / (maxFreq - minFreq);
+    const size  = Math.round(11 + ratio * 11); // 11–22 px
+    const color = WARM.has(word) ? '#E8956D' : COOL.has(word) ? '#6D9EE8' : '#9B8EA8';
+    const dx1 = ((Math.random() - 0.5) * 28).toFixed(1);
+    const dy1 = ((Math.random() - 0.5) * 18).toFixed(1);
+    const dx2 = ((Math.random() - 0.5) * 28).toFixed(1);
+    const dy2 = ((Math.random() - 0.5) * 18).toFixed(1);
+    const dur  = (8 + Math.random() * 4).toFixed(1);
+    const del  = (Math.random() * -8).toFixed(1);
+
+    styleHTML += `@keyframes bbF${idx}{0%{transform:translate(0,0)}33%{transform:translate(${dx1}px,${dy1}px)}66%{transform:translate(${dx2}px,${dy2}px)}100%{transform:translate(0,0)}}`;
+    cloudHTML  += `<span class="cloud-word" style="font-size:${size}px;color:${color};animation:bbF${idx} ${dur}s ${del}s ease-in-out infinite">${word}</span>`;
+  });
+  styleHTML += '</style>';
+
+  // ── Patterns list ──────────────────────────────────────────────────────────
+  const patternsHTML = top5.length ? `
+    <div class="divider"></div>
+    <div class="section">
+      <div class="section-title">Patterns</div>
+      <div class="patterns-list">
+        ${top5.map(([word, count]) => `
+          <div class="pattern-row">
+            <span class="pattern-word">${word}</span>
+            <span class="pattern-count">${count} time${count !== 1 ? 's' : ''}</span>
+          </div>`).join('')}
+      </div>
+    </div>` : '';
+
+  main.innerHTML = styleHTML + `
+    <div class="section">
+      <div class="section-title">Word Cloud</div>
+      <div class="cloud-container">${cloudHTML}</div>
+    </div>
+    ${patternsHTML}
+    <div class="divider"></div>
+    <div class="section">
+      <div class="section-title">All Reflections</div>
+      <div class="reflection-list" id="all-reflections"></div>
+    </div>
+  `;
+
+  const listEl = document.getElementById('all-reflections');
+  [...allReflections].reverse().forEach(e => {
+    const levelIdx = (e.level || 1) - 1;
+    const promptQ  = LEVEL_PROMPTS[levelIdx];
+    const time = e.triggeredAt
+      ? new Date(e.triggeredAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+      : '';
+    const card = document.createElement('div');
+    card.className = 'reflection-card';
+    card.innerHTML = `
+      ${promptQ ? `<div class="reflection-prompt">"${promptQ}"</div>` : ''}
+      <div class="reflection-text">${e.promptText}</div>
+      <div class="reflection-meta">${e.date || ''} · ${LEVEL_NAMES[levelIdx]} · ${time}</div>
+    `;
+    listEl.appendChild(card);
+  });
 }
 
 function getInsight(log, minutesDisplaced) {

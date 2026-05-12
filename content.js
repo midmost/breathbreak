@@ -2,7 +2,7 @@
 
 if (window !== window.top) throw new Error('bb:skip-iframe');
 
-// ─── Constants ───────────────────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const SITE = (() => {
   const h = location.hostname.replace(/^www\./, '');
@@ -15,6 +15,7 @@ const SITE = (() => {
   return map[h] || h;
 })();
 
+const IS_YOUTUBE = location.hostname.replace(/^www\./, '') === 'youtube.com';
 const STORAGE_KEY = `bb_session_${location.hostname.replace(/^www\./, '')}`;
 const LOG_KEY = 'bb_log';
 
@@ -26,8 +27,8 @@ const LEVELS = [
     pattern: 'box', rounds: 2
   },
   {
-    level: 2, threshold: 17 * 60 * 1000,
-    name: 'Nervous System Reset',
+    level: 2, threshold: 18 * 60 * 1000,
+    name: 'Settle',
     description: '4-7-8 breath + reflection',
     pattern: '478', rounds: 2,
     prompt: 'What do I actually want right now?'
@@ -84,7 +85,7 @@ const BODY_SCAN_STEPS = [
   'You are here. Fully here.'
 ];
 
-// ─── Storage helpers (guarded against invalidated extension context) ──────────
+// ─── Storage helpers (guarded against invalidated extension context) ───────────
 
 function isContextValid() {
   try { return !!chrome.runtime?.id; } catch (e) { return false; }
@@ -115,6 +116,8 @@ let overlayActive = false;
 let checkTimer = null;
 let pausedMediaElements = [];
 let mediaGuardInterval = null;
+let trackingEnabled = true;  // B7: YouTube scope
+let consecStreak = 0;        // B5: consecutive completion streak
 
 function getAllMediaElements(root = document) {
   const results = [];
@@ -178,7 +181,8 @@ function saveSession() {
 
 async function loadSession() {
   return new Promise(resolve => {
-    storageGet([STORAGE_KEY], data => {
+    storageGet([STORAGE_KEY, 'bb_consec_streak'], data => {
+      consecStreak = data.bb_consec_streak || 0;
       const stored = data[STORAGE_KEY];
       const today = new Date().toDateString();
       if (stored && stored.date === today) {
@@ -189,18 +193,54 @@ async function loadSession() {
           site: SITE,
           accumulatedMs: 0,
           triggeredLevels: [],
+          skipTimes: {},
           interrupts: []
         };
       }
+      // Ensure skipTimes exists on sessions loaded from an older format
+      if (!session.skipTimes) session.skipTimes = {};
       resolve(session);
     });
   });
 }
 
-// ─── Timing ──────────────────────────────────────────────────────────────────
+// ─── B7: YouTube scope ────────────────────────────────────────────────────────
+
+function shouldTrackOnCurrentPage() {
+  if (!IS_YOUTUBE) return true;
+  const path = location.pathname;
+  // Track on homepage and Shorts; skip /watch and everything else
+  return path === '/' || path.startsWith('/shorts/');
+}
+
+// ─── Timing ───────────────────────────────────────────────────────────────────
+
+function enableTracking() {
+  if (trackingEnabled) return;
+  trackingEnabled = true;
+  if (!document.hidden && !activeStart) activeStart = Date.now();
+  if (!checkTimer) {
+    checkTimer = setInterval(checkLevels, 10000);
+    checkLevels();
+  }
+}
+
+function disableTracking() {
+  if (!trackingEnabled) return;
+  trackingEnabled = false;
+  if (activeStart) {
+    session.accumulatedMs = (session.accumulatedMs || 0) + (Date.now() - activeStart);
+    activeStart = null;
+    saveSession();
+  }
+  clearInterval(checkTimer);
+  checkTimer = null;
+}
 
 function startTracking() {
-  if (!document.hidden) activeStart = Date.now();
+  // B7: Only start accumulating if we should track this page
+  trackingEnabled = shouldTrackOnCurrentPage();
+  if (trackingEnabled && !document.hidden) activeStart = Date.now();
 
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
@@ -210,42 +250,67 @@ function startTracking() {
         saveSession();
       }
     } else {
-      activeStart = Date.now();
+      if (trackingEnabled) activeStart = Date.now();
       if (overlayActive) suppressAllMedia();
     }
   });
 
-  checkTimer = setInterval(checkLevels, 10000);
-  checkLevels();
+  if (trackingEnabled) {
+    checkTimer = setInterval(checkLevels, 10000);
+    checkLevels();
+  }
 }
 
 function checkLevels() {
-  if (!isContextValid()) { clearInterval(checkTimer); return; }
+  if (!isContextValid()) { clearInterval(checkTimer); checkTimer = null; return; }
+  if (!trackingEnabled) return;
   if (overlayActive) return;
   const elapsed = getAccumulatedTime();
 
-  // Levels 1–4: trigger once each
+  // B4: Levels 1–4 — trigger once on completion; re-trigger after skip interval
   for (const lvl of LEVELS.slice(0, 4)) {
-    if (elapsed >= lvl.threshold && !session.triggeredLevels.includes(lvl.level)) {
+    if (session.triggeredLevels.includes(lvl.level)) continue; // already completed
+
+    const skipData = session.skipTimes[lvl.level];
+    if (skipData) {
+      // Re-trigger after the user accumulates another full threshold of scroll time since skip
+      if (elapsed >= skipData.accumulated + lvl.threshold) {
+        delete session.skipTimes[lvl.level];
+        triggerLevel(lvl);
+        return;
+      }
+      continue; // not yet time to re-trigger
+    }
+
+    if (elapsed >= lvl.threshold) {
       triggerLevel(lvl);
       return;
     }
   }
 
-  // Level 5: first at 60 min, then every 20 min indefinitely
+  // Level 5: first at threshold, then every 20 min; re-triggers after skip
   const lvl5 = LEVELS[4];
-  const count = session.level5Count || 0;
-  const nextThreshold = lvl5.threshold + count * 20 * 60 * 1000;
-  if (elapsed >= nextThreshold) {
-    session.level5Count = count + 1;
-    triggerLevel(lvl5);
+  const lvl5Skip = session.skipTimes[5];
+  if (lvl5Skip) {
+    const repeatInterval = 20 * 60 * 1000;
+    if (elapsed >= lvl5Skip.accumulated + repeatInterval) {
+      delete session.skipTimes[5];
+      triggerLevel(lvl5);
+    }
+  } else {
+    const count = session.level5Count || 0;
+    const nextThreshold = lvl5.threshold + count * 20 * 60 * 1000;
+    if (elapsed >= nextThreshold) {
+      session.level5Count = count + 1;
+      triggerLevel(lvl5);
+    }
   }
 }
 
-// ─── Overlay ─────────────────────────────────────────────────────────────────
+// ─── Overlay ──────────────────────────────────────────────────────────────────
 
 function triggerLevel(lvlConfig) {
-  overlayActive = true;
+  overlayActive = true; // prevents double-trigger during vignette + overlay phases
   const elapsed = getAccumulatedTime();
   const minutes = Math.round(elapsed / 60000);
 
@@ -256,21 +321,49 @@ function triggerLevel(lvlConfig) {
     completed: false,
     resumed: false
   };
-  session.triggeredLevels.push(lvlConfig.level);
+  // B4: Do NOT push to triggeredLevels here — only on completion in dismissOverlay
   session.interrupts.push(interruptRecord);
   saveSession();
 
-  pausePageMedia();
-  const overlay = buildOverlay(lvlConfig, minutes, interruptRecord);
-  // Append to <html> so TikTok/Instagram body transforms don't trap the stacking context
-  document.documentElement.appendChild(overlay);
+  // B2: Soft vignette phase — 3-second warning before the full overlay
+  const vignette = buildVignette();
+  document.documentElement.appendChild(vignette);
+
+  setTimeout(() => {
+    vignette.remove();
+    pausePageMedia();
+    const overlay = buildOverlay(lvlConfig, minutes, interruptRecord);
+    document.documentElement.appendChild(overlay);
+  }, 3000);
+}
+
+// B2: Subtle edge-darkening vignette with pulsing icon
+function buildVignette() {
+  const el = document.createElement('div');
+  el.id = 'breathbreak-vignette';
+  el.innerHTML = `
+    <div class="bb-vignette-icon">
+      <svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" width="40" height="40">
+        <circle cx="20" cy="20" r="16" fill="none"
+          stroke="rgba(167,139,250,0.65)" stroke-width="2" class="bb-vig-ring"/>
+        <circle cx="20" cy="20" r="7" fill="rgba(167,139,250,0.55)" class="bb-vig-dot"/>
+      </svg>
+    </div>
+  `;
+  return el;
 }
 
 function buildOverlay(lvlConfig, minutes, record) {
+  // B5: Consecutive streak badge — shown in top-right when ≥ 2
+  const streakBadge = consecStreak >= 2
+    ? `<div class="bb-consec-badge">🌬 ${consecStreak} in a row</div>`
+    : '';
+
   const el = document.createElement('div');
   el.id = 'breathbreak-overlay';
   el.innerHTML = `
     <div class="bb-card">
+      ${streakBadge}
       <div class="bb-header">
         <span class="bb-logo">BreathBreak</span>
         <span class="bb-level-badge">Level ${lvlConfig.level}</span>
@@ -311,7 +404,7 @@ function buildOverlay(lvlConfig, minutes, record) {
         <div class="bb-prompt-label">"${lvlConfig.prompt || ''}"</div>
         <textarea class="bb-prompt-input" id="bb-prompt-input"
           placeholder="Type anything to continue..." rows="3"></textarea>
-        <div class="bb-prompt-hint">Type at least a few words to unlock</div>
+        <div class="bb-prompt-hint">Focus the field to start the timer</div>
       </div>
 
       <button class="bb-continue-btn" id="bb-continue-btn" disabled>
@@ -473,11 +566,11 @@ function runBodyScan(el, lvlConfig, record) {
     text.style.opacity = '0';
     setTimeout(() => {
       text.textContent = BODY_SCAN_STEPS[idx];
-      text.style.transition = 'opacity 0.6s ease';
+      text.style.transition = 'opacity 0.48s ease';
       text.style.opacity = '1';
       idx++;
-      setTimeout(showNext, 6400);
-    }, 400);
+      setTimeout(showNext, 5120);
+    }, 320);
   }
   showNext();
 }
@@ -493,14 +586,37 @@ function showPrompt(el, record) {
   area.style.display = 'flex';
   instruction.textContent = 'One last thing before you go back…';
 
+  // B6: 2-second timer on first focus replaces the 3-word minimum gate
+  let timerStarted = false;
+  let timerDone = false;
+
+  input.addEventListener('focus', () => {
+    if (timerStarted) return;
+    timerStarted = true;
+    btn.classList.add('unlocking');
+    btn.textContent = 'Unlocking…';
+
+    setTimeout(() => {
+      btn.classList.remove('unlocking');
+      timerDone = true;
+      if (input.value.trim()) {
+        btn.disabled = false;
+        btn.textContent = 'Return to feed';
+      } else {
+        btn.textContent = 'Say something first…';
+      }
+    }, 2000);
+  });
+
+  // After timer fires, keep btn state in sync with input content
   input.addEventListener('input', () => {
-    const words = input.value.trim().split(/\s+/).filter(Boolean).length;
-    if (words >= 3) {
+    if (!timerDone) return;
+    if (input.value.trim()) {
       btn.disabled = false;
       btn.textContent = 'Return to feed';
     } else {
       btn.disabled = true;
-      btn.textContent = 'Type a few more words…';
+      btn.textContent = 'Say something first…';
     }
   });
 }
@@ -527,16 +643,32 @@ function dismissOverlay(el, record, completed) {
   }
 
   record.completed = completed;
+
   if (completed) {
     record.completedAt = Date.now();
     record.resumed = true;
+    // B4: Add to triggeredLevels only on completion, not on skip
+    if (record.level <= 4 && !session.triggeredLevels.includes(record.level)) {
+      session.triggeredLevels.push(record.level);
+    }
+    // B5: Increment consecutive streak
+    consecStreak++;
+    storageSet({ bb_consec_streak: consecStreak });
+  } else {
+    // B4: Record the accumulated time at skip for re-trigger calculation
+    session.skipTimes = session.skipTimes || {};
+    session.skipTimes[record.level] = { accumulated: getAccumulatedTime() };
+    // B5: Reset consecutive streak on any skip
+    consecStreak = 0;
+    storageSet({ bb_consec_streak: 0 });
   }
+
   saveSession();
   appendLog(record);
 
   resumePageMedia();
   overlayActive = false;
-  if (!document.hidden) activeStart = Date.now();
+  if (!document.hidden && trackingEnabled) activeStart = Date.now();
 }
 
 // ─── Logging ─────────────────────────────────────────────────────────────────
@@ -554,9 +686,12 @@ function appendLog(record) {
 
 loadSession().then(startTracking);
 
-// YouTube SPA navigation (Shorts, Watch, Home, etc.) fires yt-navigate-finish
-// when the URL changes without a full page reload. Resume timing on each navigation.
+// B7: YouTube SPA navigation — re-evaluate tracking on every page transition
 window.addEventListener('yt-navigate-finish', () => {
   if (!session) return;
-  if (!document.hidden && !activeStart) activeStart = Date.now();
+  if (shouldTrackOnCurrentPage()) {
+    enableTracking();
+  } else {
+    disableTracking();
+  }
 });
