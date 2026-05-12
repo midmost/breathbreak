@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "BreathBreak",
-  "version": "1.1.0",
-  "description": "Interrupts doom scrolling with breathing exercises. Scroll freely — just breathe first.",
+  "name": "BreathBreak — Mindful Scrolling",
+  "short_name": "BreathBreak",
+  "version": "1.2.0",
+  "description": "Turns doom scrolling into breathing breaks. The longer you scroll, the deeper the reset.",
   "permissions": ["storage"],
   "background": {
     "service_worker": "background.js"
