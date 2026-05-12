@@ -15,7 +15,7 @@ BreathBreak tracks active time per site per day. When you cross a threshold, a f
 | Level | Triggered at | Exercise | Extra |
 |-------|-------------|----------|-------|
 | 1 · Quick Reset | 8 min | Box breath × 2 rounds | — |
-| 2 · Nervous System Reset | 17 min | 4-7-8 × 2 rounds | Reflection prompt |
+| 2 · Settle | 18 min | 4-7-8 × 2 rounds | Reflection prompt |
 | 3 · Body Scan | 30 min | 4-7-8 × 2 rounds | Body scan |
 | 4 · Deep Reset | 45 min | 4-7-8 × 3 rounds | Reflection prompt |
 | 5 · Full Presence | 60 min | 4-7-8 × 5 rounds | Body scan + reflection |
